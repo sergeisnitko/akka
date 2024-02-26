@@ -24,6 +24,7 @@ addSbtPlugin("pl.project13.scala" % "sbt-jmh" % "0.1.14")
 //addSbtPlugin("com.typesafe.sbt" % "sbt-native-packager" % "0.8.0-M2")
 
 libraryDependencies += "com.timgroup" % "java-statsd-client" % "2.0.0"
+libraryDependencies += "com.github.etaty" %% "rediscala" % "1.7.0"
 
 addSbtPlugin("io.spray" % "sbt-boilerplate" % "0.5.9")
 

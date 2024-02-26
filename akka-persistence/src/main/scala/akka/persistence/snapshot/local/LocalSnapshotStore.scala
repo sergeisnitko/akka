@@ -44,25 +44,30 @@ private[persistence] class LocalSnapshotStore extends SnapshotStore with ActorLo
     //
     // TODO: make number of loading attempts configurable
     //
+    log.info("[AKKA_PERS] LocalSnapshotStore loadAsync")
     val metadata = snapshotMetadata(persistenceId, criteria).sorted.takeRight(3)
     Future(load(metadata))(streamDispatcher)
   }
 
   def saveAsync(metadata: SnapshotMetadata, snapshot: Any): Future[Unit] = {
+    log.info("[AKKA_PERS] LocalSnapshotStore saveAsync")
     saving += metadata
     Future(save(metadata, snapshot))(streamDispatcher)
   }
 
   def saved(metadata: SnapshotMetadata): Unit = {
+    log.info("[AKKA_PERS] LocalSnapshotStore saved")
     saving -= metadata
   }
 
   def delete(metadata: SnapshotMetadata): Unit = {
+    log.info("[AKKA_PERS] LocalSnapshotStore delete")
     saving -= metadata
     snapshotFile(metadata).delete()
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria) = {
+    log.info("[AKKA_PERS] LocalSnapshotStore delete")
     snapshotMetadata(persistenceId, criteria).foreach(delete)
   }
 
@@ -73,12 +78,13 @@ private[persistence] class LocalSnapshotStore extends SnapshotStore with ActorLo
       Try(withInputStream(md)(deserialize)) match {
         case Success(s) ⇒ Some(SelectedSnapshot(md, s.data))
         case Failure(e) ⇒
-          log.error(e, s"Error loading snapshot [${md}]")
+          log.error(e, s"[AKKA_PERS] Error loading snapshot [${md}]")
           load(metadata.init) // try older snapshot
       }
   }
 
   protected def save(metadata: SnapshotMetadata, snapshot: Any): Unit = {
+    log.info("[AKKA_PERS] LocalSnapshotStore save")
     val tmpFile = withOutputStream(metadata)(serialize(_, Snapshot(snapshot)))
     tmpFile.renameTo(snapshotFile(metadata))
   }
@@ -90,6 +96,7 @@ private[persistence] class LocalSnapshotStore extends SnapshotStore with ActorLo
     outputStream.write(serializationExtension.findSerializerFor(snapshot).toBinary(snapshot))
 
   protected def withOutputStream(metadata: SnapshotMetadata)(p: (OutputStream) ⇒ Unit): File = {
+    log.info("[AKKA_PERS] LocalSnapshotStore withOutputStream")
     val tmpFile = snapshotFile(metadata, extension = "tmp")
     withStream(new BufferedOutputStream(new FileOutputStream(tmpFile)), p)
     tmpFile
@@ -110,6 +117,8 @@ private[persistence] class LocalSnapshotStore extends SnapshotStore with ActorLo
     }.filter(md ⇒ criteria.matches(md) && !saving.contains(md)).toVector
 
   override def preStart() {
+    log.info("[AKKA_PERS] STARTED SNAPSHOT")
+    
     if (!snapshotDir.isDirectory) {
       // try to create the directory, on failure double check if someone else beat us to it
       if (!snapshotDir.mkdirs() && !snapshotDir.isDirectory) {

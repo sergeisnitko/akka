@@ -1152,6 +1152,11 @@ object Dependencies {
     //   akka-samples/akka-sample-osgi-dining-hakkers/pom.xml
 
     // Compile
+    val spray         = "io.spray"                    %% "spray-json"                  % "1.3.6"
+
+    val rediscala     = "com.github.etaty"            %% "rediscala"                   % "1.7.0"
+    val jedis         = "redis.clients"               % "jedis"                        % "4.3.1"
+
     val camelCore     = "org.apache.camel"            % "camel-core"                   % "2.10.3" exclude("org.slf4j", "slf4j-api") // ApacheV2
 
     val config        = "com.typesafe"                % "config"                       % "1.2.1"       // ApacheV2
@@ -1236,7 +1241,7 @@ object Dependencies {
 
   val transactor = Seq(scalaStm, Test.scalatest, Test.junit)
 
-  val persistence = deps(levelDB, levelDBNative, protobuf, Test.scalatest, Test.junit, Test.commonsIo, Test.scalaXml)
+  val persistence = deps(spray, jedis, rediscala, levelDB, levelDBNative, protobuf, Test.scalatest, Test.junit, Test.commonsIo, Test.scalaXml)
 
   val persistenceTck = Seq(Test.scalatest.copy(configurations = Some("compile")), Test.junit.copy(configurations = Some("compile")))
 

@@ -82,6 +82,7 @@ private[akka] trait ProcessorImpl extends Actor with Recovery {
    * to `processing` state.
    */
   private val initializing = new State {
+    println("[AKKA_PERS] Processor Init")
     override def toString: String = "initializing"
 
     def aroundReceive(receive: Receive, message: Any) = message match {
