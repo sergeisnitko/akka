@@ -13,11 +13,21 @@ import scala.util.Try
 import redis.ByteStringFormatter
 
 import spray.json._
+import java.time.ZonedDateTime
 
-case class Journal(sequenceNr: Long, persistentRepr: Array[Byte], deleted: Boolean)
+case class Journal(sequenceNr: Long, persistentRepr: Array[Byte], deleted: Boolean, createdAt: ZonedDateTime)
 
 object Journal extends DefaultJsonProtocol {
-  implicit val fmt = jsonFormat3(Journal.apply)
+  implicit val zonedDateTimeFormat: JsonFormat[ZonedDateTime] = new JsonFormat[ZonedDateTime] {
+    override def read(json: JsValue): ZonedDateTime = json match {
+      case JsString(str) ⇒ ZonedDateTime.parse(str)
+      case _             ⇒ throw new DeserializationException("ZonedDateTime expected")
+    }
+
+    override def write(obj: ZonedDateTime): JsValue = JsString(obj.toString)
+  }
+
+  implicit val fmt = jsonFormat4(Journal.apply)
 
   implicit val byteStringFormatter = new ByteStringFormatter[Journal] {
     override def serialize(data: Journal): ByteString = {
@@ -42,7 +52,6 @@ trait ByteArraySerializer {
   private val serialization = SerializationExtension(actorSystem)
 
   def toBytes(data: AnyRef): Try[Array[Byte]] = serialization.serialize(data)
-  def fromBytes1(a: Array[Byte])(implicit serialization: Serialization): PersistentRepr = serialization.deserialize(a, classOf[PersistentRepr]).get
 
   def fromBytes[T: ClassTag](a: Array[Byte]): Try[T] =
     serialization.deserialize(a, classTag[T].runtimeClass.asInstanceOf[Class[T]])

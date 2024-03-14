@@ -27,6 +27,8 @@ import scala.collection.immutable.Seq
 import scala.concurrent.duration._
 import scala.concurrent.{ ExecutionContext, Future }
 
+import java.time.{ ZonedDateTime, ZoneOffset }
+
 class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with ActorLogging {
   import AsyncWriteProxy.SetStore
 
@@ -53,9 +55,13 @@ class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with Actor
 
     println(context.system)
     var redisHost = config.getString("akka.persistence.journal.host")
-    var redisPort = config.getString("akka.persistence.journal.port").toInt
+    var redisPort = config.getInt("akka.persistence.journal.port")
 
-    redis = RedisClient(host = redisHost, port = redisPort)
+    redis = RedisClient(
+      host = redisHost,
+      port = redisPort,
+      db = database(config))
+
     super.preStart()
   }
 
@@ -65,6 +71,12 @@ class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with Actor
     super.postStop()
   }
 
+  def database(conf: Config): Option[Int] =
+    if (conf.hasPath("akka.persistence.journal.db"))
+      Some(conf.getInt("akka.persistence.journal.db"))
+    else
+      None
+
   def highestSequenceNrKey(persistenceId: String): String =
     "akka:journal:" + persistenceId + ":highestSequenceNr"
 
@@ -72,7 +84,7 @@ class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with Actor
     "akka:journal:" + persistenceId
 
   override def asyncWriteMessages(messages: immutable.Seq[PersistentRepr]): Future[Unit] = {
-    log.info("[AKKA_PERS] STARTED asyncWriteMessages")
+    // log.info("[AKKA_PERS] STARTED asyncWriteMessages")
 
     val transaction = redis.transaction()
 
@@ -82,26 +94,26 @@ class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with Actor
       }
       .map(_ ⇒ ())
 
-    log.info("[AKKA_PERS] STARTED asyncWriteBatch", batchOperations);
+    // log.info("[AKKA_PERS] STARTED asyncWriteBatch", batchOperations);
 
     transaction.exec()
 
-    log.info("[AKKA_PERS] STOPPED asyncWriteBatch")
+    // log.info("[AKKA_PERS] STOPPED asyncWriteBatch")
 
     batchOperations
       .map(Success(_))
   }
 
   override def asyncReplayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(recoveryCallback: PersistentRepr ⇒ Unit): Future[Unit] = {
-    log.info("[AKKA_PERS] STARTED asyncReplayMessages")
+    // log.info("[AKKA_PERS] STARTED asyncReplayMessages")
     for {
-      entries ← redis.zrangebyscore[Array[Byte]](journalKey(persistenceId), Limit(fromSequenceNr), Limit(toSequenceNr), Some(0L -> max))
+      entries ← redis.zrangebyscore[Journal](journalKey(persistenceId), Limit(fromSequenceNr), Limit(toSequenceNr), Some(0L -> max))
     } yield {
       entries.foreach { entry ⇒
-        log.info("[AKKA_PERS] STARTED replay message")
+        // log.info("[AKKA_PERS] STARTED replay message")
 
         try {
-          fromBytes[PersistentRepr](entry) match {
+          fromBytes[PersistentRepr](entry.persistentRepr) match {
             case Success(pr) ⇒ recoveryCallback(pr)
             case Failure(_)  ⇒ Future.failed(throw new RuntimeException("[AKKA_PERS] asyncReplayMessages: Failed to deserialize PersistentRepr"))
           }
@@ -120,23 +132,24 @@ class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with Actor
   }
 
   override def asyncDeleteMessages(messageIds: scala.collection.immutable.Seq[akka.persistence.PersistentId], permanent: Boolean): scala.concurrent.Future[Unit] = {
-    log.info("[AKKA_PERS] STARTED asyncDeleteMessages")
+    // log.info("[AKKA_PERS] STARTED asyncDeleteMessages")
     Future.successful(Nil)
   }
   override def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long, permanent: Boolean): scala.concurrent.Future[Unit] = {
+    // log.info("[AKKA_PERS] STARTED asyncDeleteMessagesTo")
     for {
       _ ← redis.zremrangebyscore(journalKey(persistenceId), Limit(-1), Limit(toSequenceNr))
     } yield ()
   }
   override def asyncWriteConfirmations(confirmations: scala.collection.immutable.Seq[akka.persistence.PersistentConfirmation]): scala.concurrent.Future[Unit] = {
-    log.info("[AKKA_PERS] STARTED asyncWriteConfirmations")
+    // log.info("[AKKA_PERS] STARTED asyncWriteConfirmations")
     Future.successful(Nil)
   }
 
   private def asyncWriteOperation(transaction: TransactionBuilder, pr: PersistentRepr): Future[Unit] = {
     toBytes(pr) match {
       case Success(serialized) ⇒
-        val journal = Journal(pr.sequenceNr, serialized, pr.deleted)
+        val journal = Journal(pr.sequenceNr, serialized, pr.deleted, ZonedDateTime.now(ZoneOffset.UTC))
         transaction
           .zadd(journalKey(pr.persistenceId), (pr.sequenceNr, journal))
           .zip(transaction.set(highestSequenceNrKey(pr.persistenceId), pr.sequenceNr))
