@@ -480,6 +480,7 @@ private[akka] class ActorCell(
 
   //Memory consistency is handled by the Mailbox (reading mailbox status then processing messages, then writing mailbox status
   final def invoke(messageHandle: Envelope): Unit = try {
+    println("BBBBBBBBBBBBBBBBBBBBBB invoke invoke invoke")
     currentMessage = messageHandle
     cancelReceiveTimeout() // FIXME: leave this here???
     messageHandle.message match {
@@ -598,7 +599,8 @@ private[akka] class ActorCell(
     }
   }
 
-  private def supervise(child: ActorRef, async: Boolean): Unit =
+  private def supervise(child: ActorRef, async: Boolean): Unit = {
+    println("")
     if (!isTerminating) {
       // Supervise is the first thing we get from a new child, so store away the UID for later use in handleFailure()
       initChild(child) match {
@@ -608,6 +610,7 @@ private[akka] class ActorCell(
         case None ⇒ publish(Error(self.path.toString, clazz(actor), "received Supervise from unregistered child " + child + ", this will not end well"))
       }
     }
+  }
 
   // future extension point
   protected def handleSupervise(child: ActorRef, async: Boolean): Unit = child match {

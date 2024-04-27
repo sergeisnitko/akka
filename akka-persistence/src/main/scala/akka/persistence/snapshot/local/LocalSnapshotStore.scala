@@ -44,30 +44,30 @@ private[persistence] class LocalSnapshotStore extends SnapshotStore with ActorLo
     //
     // TODO: make number of loading attempts configurable
     //
-    // log.info("[AKKA_PERS] LocalSnapshotStore loadAsync")
+    log.info("[AKKA_PERS] LocalSnapshotStore loadAsync")
     val metadata = snapshotMetadata(persistenceId, criteria).sorted.takeRight(3)
     Future(load(metadata))(streamDispatcher)
   }
 
   def saveAsync(metadata: SnapshotMetadata, snapshot: Any): Future[Unit] = {
-    // log.info("[AKKA_PERS] LocalSnapshotStore saveAsync")
+    log.info("[AKKA_PERS] LocalSnapshotStore saveAsync")
     saving += metadata
     Future(save(metadata, snapshot))(streamDispatcher)
   }
 
   def saved(metadata: SnapshotMetadata): Unit = {
-    // log.info("[AKKA_PERS] LocalSnapshotStore saved")
+    log.info("[AKKA_PERS] LocalSnapshotStore saved")
     saving -= metadata
   }
 
   def delete(metadata: SnapshotMetadata): Unit = {
-    // log.info("[AKKA_PERS] LocalSnapshotStore delete")
+    log.info("[AKKA_PERS] LocalSnapshotStore delete")
     saving -= metadata
     snapshotFile(metadata).delete()
   }
 
   def delete(persistenceId: String, criteria: SnapshotSelectionCriteria) = {
-    // log.info("[AKKA_PERS] LocalSnapshotStore delete")
+    log.info("[AKKA_PERS] LocalSnapshotStore delete")
     snapshotMetadata(persistenceId, criteria).foreach(delete)
   }
 
@@ -84,7 +84,7 @@ private[persistence] class LocalSnapshotStore extends SnapshotStore with ActorLo
   }
 
   protected def save(metadata: SnapshotMetadata, snapshot: Any): Unit = {
-    // log.info("[AKKA_PERS] LocalSnapshotStore save")
+    log.info("[AKKA_PERS] LocalSnapshotStore save")
     val tmpFile = withOutputStream(metadata)(serialize(_, Snapshot(snapshot)))
     tmpFile.renameTo(snapshotFile(metadata))
   }
@@ -96,7 +96,7 @@ private[persistence] class LocalSnapshotStore extends SnapshotStore with ActorLo
     outputStream.write(serializationExtension.findSerializerFor(snapshot).toBinary(snapshot))
 
   protected def withOutputStream(metadata: SnapshotMetadata)(p: (OutputStream) ⇒ Unit): File = {
-    // log.info("[AKKA_PERS] LocalSnapshotStore withOutputStream")
+    log.info("[AKKA_PERS] LocalSnapshotStore withOutputStream")
     val tmpFile = snapshotFile(metadata, extension = "tmp")
     withStream(new BufferedOutputStream(new FileOutputStream(tmpFile)), p)
     tmpFile

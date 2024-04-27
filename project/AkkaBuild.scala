@@ -751,7 +751,11 @@ object AkkaBuild extends Build {
     else Seq.empty
   } ++ Seq(
     pomIncludeRepository := (_ => false) // do not leak internal repositories during staging
+  ) ++ Seq(
+    // resolvers += "Nexus Repository" at "https://nexus3.shared.wmg.com/repository/public/"
+    resolvers += "Local Maven Repository" at "file:///C:/Users/ssnit/.m2/repository"
   )
+
 
   lazy val defaultSettings = baseSettings ++ mimaSettings ++ resolverSettings ++
     Protobuf.settings ++ Seq(
@@ -1155,6 +1159,22 @@ object Dependencies {
     val spray         = "io.spray"                    %% "spray-json"                  % "1.3.6"
 
     val rediscala     = "com.github.etaty"            %% "rediscala"                   % "1.7.0"
+
+    val rpAkkadp      = "com.wmg.dsp.tango.royalties.tools" % "tango-royalty-datapipeline" % "1.2.57-POSTGRES-POC-SNAPSHOT" excludeAll(
+        ExclusionRule(organization = "com.wordnik")
+      ) excludeAll(
+        ExclusionRule(organization = "com.typesafe.akka")
+      ) excludeAll(
+        ExclusionRule(organization = "com.datastax.cassandra")
+      ) excludeAll(
+        ExclusionRule(organization = "org.springframework")
+      ) excludeAll(
+        ExclusionRule(organization = "io.kamon")
+      ) excludeAll(
+        ExclusionRule(organization = "org.apache.cassandra")
+      ) exclude("com.wmg.dsp.tango", "akka-persistence-cassandra-12_2.10")
+    
+
     val jedis         = "redis.clients"               % "jedis"                        % "4.3.1"
 
     val camelCore     = "org.apache.camel"            % "camel-core"                   % "2.10.3" exclude("org.slf4j", "slf4j-api") // ApacheV2
@@ -1241,7 +1261,7 @@ object Dependencies {
 
   val transactor = Seq(scalaStm, Test.scalatest, Test.junit)
 
-  val persistence = deps(spray, jedis, rediscala, levelDB, levelDBNative, protobuf, Test.scalatest, Test.junit, Test.commonsIo, Test.scalaXml)
+  val persistence = deps(rpAkkadp, spray, jedis, rediscala, levelDB, levelDBNative, protobuf, Test.scalatest, Test.junit, Test.commonsIo, Test.scalaXml)
 
   val persistenceTck = Seq(Test.scalatest.copy(configurations = Some("compile")), Test.junit.copy(configurations = Some("compile")))
 

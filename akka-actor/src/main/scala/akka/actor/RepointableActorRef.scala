@@ -73,7 +73,8 @@ private[akka] class RepointableActorRef(
    *
    * This is protected so that others can have different initialization.
    */
-  def initialize(async: Boolean): this.type =
+  def initialize(async: Boolean): this.type = {
+    println("BBBBBBBBBBBBBBBBBBBBBB initialize")
     underlying match {
       case null ⇒
         swapCell(new UnstartedCell(system, this, props, supervisor))
@@ -83,6 +84,7 @@ private[akka] class RepointableActorRef(
         this
       case other ⇒ throw new IllegalStateException("initialize called more than once!")
     }
+  }
 
   /**
    * This method is supposed to be called by the supervisor in handleSupervise()
@@ -216,6 +218,7 @@ private[akka] class UnstartedCell(val systemImpl: ActorSystemImpl,
   override def getSingleChild(name: String): InternalActorRef = Nobody
 
   def sendMessage(msg: Envelope): Unit = {
+    println("&^^^^^^^^^^^^^^^^^^^^^^&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&^^^^^^^^^^^^^^^^^^")
     if (lock.tryLock(timeout.length, timeout.unit)) {
       try {
         val cell = self.underlying

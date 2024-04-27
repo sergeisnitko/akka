@@ -37,8 +37,10 @@ private[persistence] trait AsyncWriteProxy extends AsyncWriteJournal with Stash 
 
   implicit def timeout: Timeout
 
-  def asyncWriteMessages(messages: immutable.Seq[PersistentRepr]): Future[Unit] =
+  def asyncWriteMessages(messages: immutable.Seq[PersistentRepr]): Future[Unit] = {
+    println("JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ asyncWriteMessages");
     (store ? WriteMessages(messages)).mapTo[Unit]
+  }
 
   def asyncWriteConfirmations(confirmations: immutable.Seq[PersistentConfirmation]): Future[Unit] =
     (store ? WriteConfirmations(confirmations)).mapTo[Unit]
@@ -46,8 +48,10 @@ private[persistence] trait AsyncWriteProxy extends AsyncWriteJournal with Stash 
   def asyncDeleteMessages(messageIds: immutable.Seq[PersistentId], permanent: Boolean): Future[Unit] =
     (store ? DeleteMessages(messageIds, permanent)).mapTo[Unit]
 
-  def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long, permanent: Boolean): Future[Unit] =
+  def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long, permanent: Boolean): Future[Unit] = {
+    println("JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ");
     (store ? DeleteMessagesTo(persistenceId, toSequenceNr, permanent)).mapTo[Unit]
+  }
 
   def asyncReplayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(replayCallback: (PersistentRepr) ⇒ Unit): Future[Unit] = {
     val replayCompletionPromise = Promise[Unit]

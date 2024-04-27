@@ -4,11 +4,6 @@
 
 package akka.persistence.journal.inmem
 
-import _root_.redis._
-
-import commands._
-import api._
-
 import akka.actor._
 import akka.util.ByteString
 import akka.serialization.SerializationExtension
@@ -29,17 +24,35 @@ import scala.concurrent.{ ExecutionContext, Future }
 
 import java.time.{ ZonedDateTime, ZoneOffset }
 
+import com.wmg.dsp.tango.royalties.domain.summary.PayeeAccountSummary;
+import com.wmg.dsp.tango.royalties.domain.summary.PayeeAccountSummaryId;
+
+import com.wmg.dsp.platform.persistence.messages.DeleteEntities;
+import com.wmg.dsp.platform.persistence.messages.DeleteEntity;
+import com.wmg.dsp.platform.persistence.messages.DeletedEntities;
+import com.wmg.dsp.platform.persistence.messages.DeletedEntity;
+import com.wmg.dsp.platform.persistence.messages.EntitiesMessage;
+import com.wmg.dsp.platform.persistence.messages.EntityMessage;
+import com.wmg.dsp.platform.persistence.messages.GetEntities;
+import com.wmg.dsp.platform.persistence.messages.GetEntity;
+import com.wmg.dsp.platform.persistence.messages.SaveEntities;
+import com.wmg.dsp.platform.persistence.messages.SaveEntity;
+import com.wmg.dsp.platform.persistence.messages.SavedEntitiesMessage;
+import com.wmg.dsp.platform.persistence.messages.SavedEntityMessage;
+
+import com.wmg.dsp.platform.persistence.postgres.providers.PostgresProvider;
+import com.wmg.dsp.tango.royalties.utils.RPComponents;
+import java.util.{ UUID, ArrayList, List }
+import scala.collection.JavaConverters._
+
+import com.wmg.dsp.tango.royalties.domain.messages.MessageId;
+import com.wmg.dsp.tango.royalties.domain.messages.Message;
+import com.wmg.dsp.tango.royalties.dao.messages.MessageRepo;
+
 class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with ActorLogging {
   import AsyncWriteProxy.SetStore
 
   override implicit lazy val actorSystem = context.system
-
-  private val config = actorSystem.settings.config
-
-  implicit object longFormatter extends ByteStringDeserializer[Long] {
-    def deserialize(bs: ByteString): Long =
-      bs.utf8String.toLong
-  }
 
   implicit def ec = context.system.dispatcher
 
@@ -47,116 +60,94 @@ class InmemJournal extends AsyncWriteJournal with ByteArraySerializer with Actor
 
   val timeout = Timeout(5 seconds)
 
-  var redis: RedisClient = _
+  var repo: MessageRepo = _
 
-  val identifiersKey = "akka:journal:persistenceIds"
   override def preStart(): Unit = {
     log.info("[AKKA_PERS] STARTED InmemJournal")
 
-    println(context.system)
-    var redisHost = config.getString("akka.persistence.journal.host")
-    var redisPort = config.getInt("akka.persistence.journal.port")
+    repo = RPComponents.getMessageRepo();
 
-    redis = RedisClient(
-      host = redisHost,
-      port = redisPort,
-      db = database(config))
+    println(context.system)
 
     super.preStart()
   }
 
   override def postStop(): Unit = {
     log.info("[AKKA_PERS] STOPPED InmemJournal")
-    redis.stop()
     super.postStop()
   }
 
-  def database(conf: Config): Option[Int] =
-    if (conf.hasPath("akka.persistence.journal.db"))
-      Some(conf.getInt("akka.persistence.journal.db"))
-    else
-      None
-
-  def highestSequenceNrKey(persistenceId: String): String =
-    "akka:journal:" + persistenceId + ":highestSequenceNr"
-
-  def journalKey(persistenceId: String): String =
-    "akka:journal:" + persistenceId
-
   override def asyncWriteMessages(messages: immutable.Seq[PersistentRepr]): Future[Unit] = {
-    // log.info("[AKKA_PERS] STARTED asyncWriteMessages")
+    log.info("[AKKA_PERS] STARTED asyncWriteMessages")
 
-    val transaction = redis.transaction()
+    val entities = new ArrayList[Message]()
 
-    val batchOperations = Future
-      .sequence {
-        messages.map(asyncWriteOperation(transaction, _))
-      }
-      .map(_ ⇒ ())
+    val batchPostgresOperations =
+      Future
+        .sequence {
+          messages.map(asyncWriteEntityOperation(entities, _))
+        }
+        .map(_ ⇒ ())
 
-    // log.info("[AKKA_PERS] STARTED asyncWriteBatch", batchOperations);
+    try {
+      repo.save(entities);
+    } catch {
+      case e: Exception ⇒ e.printStackTrace()
+    }
 
-    transaction.exec()
+    log.info("[AKKA_PERS] STOPPED asyncWriteBatch")
+    ////////////////
 
-    // log.info("[AKKA_PERS] STOPPED asyncWriteBatch")
-
-    batchOperations
+    batchPostgresOperations
       .map(Success(_))
   }
 
   override def asyncReplayMessages(persistenceId: String, fromSequenceNr: Long, toSequenceNr: Long, max: Long)(recoveryCallback: PersistentRepr ⇒ Unit): Future[Unit] = {
-    // log.info("[AKKA_PERS] STARTED asyncReplayMessages")
-    for {
-      entries ← redis.zrangebyscore[Journal](journalKey(persistenceId), Limit(fromSequenceNr), Limit(toSequenceNr), Some(0L -> max))
-    } yield {
-      entries.foreach { entry ⇒
-        // log.info("[AKKA_PERS] STARTED replay message")
-
-        try {
-          fromBytes[PersistentRepr](entry.persistentRepr) match {
-            case Success(pr) ⇒ recoveryCallback(pr)
-            case Failure(_)  ⇒ Future.failed(throw new RuntimeException("[AKKA_PERS] asyncReplayMessages: Failed to deserialize PersistentRepr"))
+    repo.getAll(persistenceId, fromSequenceNr, toSequenceNr)
+      .asScala
+      .toList
+      .foldLeft(Future.successful(())) { (acc, entry) ⇒
+        acc.flatMap { _ ⇒
+          try {
+            val pr = fromBytes[PersistentRepr](entry.getMessage()).getOrElse(
+              throw new RuntimeException("[AKKA_PERS] asyncReplayMessages: Failed to deserialize PersistentRepr"))
+            recoveryCallback(pr)
+            Future.successful(())
+          } catch {
+            case ex: Throwable ⇒
+              log.info("[AKKA_PERS] replay message ERRROR" + ex)
+              Future.failed(ex)
           }
-        } catch {
-          case ex: Throwable ⇒
-            log.info("[AKKA_PERS] replay message ERRROR" + ex)
         }
-        ReplaySuccess
       }
-    }
   }
 
   override def asyncReadHighestSequenceNr(persistenceId: String, fromSequenceNr: Long): Future[Long] = {
-    for (highestStored ← redis.get[Long](highestSequenceNrKey(persistenceId)))
-      yield highestStored.getOrElse(fromSequenceNr)
+    val result: Long = repo.getHighestSequenceNrKey(persistenceId, fromSequenceNr)
+    Future.successful(result)
   }
 
   override def asyncDeleteMessages(messageIds: scala.collection.immutable.Seq[akka.persistence.PersistentId], permanent: Boolean): scala.concurrent.Future[Unit] = {
-    // log.info("[AKKA_PERS] STARTED asyncDeleteMessages")
+    log.info("[AKKA_PERS] STARTED asyncDeleteMessages")
     Future.successful(Nil)
   }
   override def asyncDeleteMessagesTo(persistenceId: String, toSequenceNr: Long, permanent: Boolean): scala.concurrent.Future[Unit] = {
-    // log.info("[AKKA_PERS] STARTED asyncDeleteMessagesTo")
-    for {
-      _ ← redis.zremrangebyscore(journalKey(persistenceId), Limit(-1), Limit(toSequenceNr))
-    } yield ()
+    log.info("[AKKA_PERS] STARTED asyncDeleteMessagesTo " + persistenceId + " - " + toSequenceNr.toString);
+    repo.delete(persistenceId, toSequenceNr)
+    Future.successful(Nil)
   }
   override def asyncWriteConfirmations(confirmations: scala.collection.immutable.Seq[akka.persistence.PersistentConfirmation]): scala.concurrent.Future[Unit] = {
-    // log.info("[AKKA_PERS] STARTED asyncWriteConfirmations")
+    log.info("[AKKA_PERS] STARTED asyncWriteConfirmations")
     Future.successful(Nil)
   }
 
-  private def asyncWriteOperation(transaction: TransactionBuilder, pr: PersistentRepr): Future[Unit] = {
+  private def asyncWriteEntityOperation(entities: ArrayList[Message], pr: PersistentRepr): Future[Unit] = {
     toBytes(pr) match {
       case Success(serialized) ⇒
-        val journal = Journal(pr.sequenceNr, serialized, pr.deleted, ZonedDateTime.now(ZoneOffset.UTC))
-        transaction
-          .zadd(journalKey(pr.persistenceId), (pr.sequenceNr, journal))
-          .zip(transaction.set(highestSequenceNrKey(pr.persistenceId), pr.sequenceNr))
-          .zip(transaction.sadd(identifiersKey, pr.persistenceId))
-          .map(_ ⇒ ())
-      case Failure(e) ⇒ Future.failed(new scala.RuntimeException("writeMessages: failed to write PersistentRepr to redis"))
+        entities
+          .add(new Message(new MessageId(pr.persistenceId, 0, pr.sequenceNr, "H"), serialized))
+        Future.successful(Nil)
+      case Failure(e) ⇒ Future.failed(new scala.RuntimeException("writeMessages: failed to write PersistentRepr to postgres"))
     }
   }
-
 }

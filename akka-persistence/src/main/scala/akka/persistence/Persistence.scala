@@ -95,7 +95,7 @@ class Persistence(val system: ExtendedActorSystem) extends Extension {
   private val config = system.settings.config.getConfig("akka.persistence")
 
   val settings = new PersistenceSettings(config)
-  println("[AKKA_PERS] Persistence Init")
+  println("[AKKA_PERS] Persistence Init ^^^^^^^^^^^")
 
   private val snapshotStore = createPlugin("snapshot-store") { _ ⇒
     DefaultPluginDispatcherId
